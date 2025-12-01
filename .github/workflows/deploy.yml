@@ -10,47 +10,59 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------
-      # SOURCE PHASE
-      # -------------------------
-      - name: Checkout code
-        uses: actions/checkout@v3
+    # -------------------------
+    # SOURCE PHASE
+    # -------------------------
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      # -------------------------
-      # AWS CREDENTIALS (Access Keys method)
-      # -------------------------
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ca-central-1
+    # -------------------------
+    # AWS CREDENTIALS
+    # -------------------------
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ca-central-1
 
-      # -------------------------
-      # LOGIN TO ECR
-      # -------------------------
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+    # -------------------------
+    # LOGIN TO ECR
+    # -------------------------
+    - name: Login to ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
 
-      # -------------------------
-      # BUILD + PUSH DOCKER IMAGE
-      # -------------------------
-      - name: Build and Push Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: chukka-final-api   # <-- updated!
-          IMAGE_TAG: latest
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+    # -------------------------
+    # BUILD AND PUSH DOCKER IMAGE
+    # -------------------------
+    - name: Build and Push Docker image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: chukka-final-api
+        IMAGE_TAG: latest
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      # -------------------------
-      # DEPLOY NEW IMAGE TO ECS
-      # -------------------------
-      - name: Update ECS Service
-        uses: aws-actions/amazon-ecs-update-service@v1
-        with:
-          cluster: chukka-final-cluster
-          service: chukka-final-service
-          force-new-deployment: true
+    # -------------------------
+    # PREPARE TASK DEFINITION FILE
+    # -------------------------
+    - name: Render Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: taskdef.json
+        container-name: chukka-api
+        image: ${{ steps.login-ecr.outputs.registry }}/chukka-final-api:latest
+
+    # -------------------------
+    # DEPLOY TO ECS
+    # -------------------------
+    - name: Deploy to Amazon ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: chukka-final-service
+        cluster: chukka-final-cluster
+        wait-for-service-stability: true
