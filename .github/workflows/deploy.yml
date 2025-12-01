@@ -2,53 +2,62 @@ name: Deploy to ECS
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 env:
   AWS_REGION: ca-central-1
   ECR_REPOSITORY: chukka-final-api
   ECS_CLUSTER: chukka-final-cluster
   ECS_SERVICE: chukka-final-service
-  TASK_DEFINITION: taskdef.json
-  CONTAINER_NAME: chukka-container
+  TASK_FAMILY: chukka-final-task
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ca-central-1
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ca-central-1
 
-    - name: Login to Amazon ECR
-      uses: aws-actions/amazon-ecr-login@v1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build, Tag, and Push Image
-      run: |
-        IMAGE_TAG=latest
-        docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-        docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ca-central-1.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ca-central-1.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+      - name: Build, Tag, and Push Image
+        id: build-image
+        run: |
+          IMAGE_TAG=latest
+          ACCOUNT_ID=287526490745
+          IMAGE_REPO_URL="$ACCOUNT_ID.dkr.ecr.ca-central-1.amazonaws.com/${ECR_REPOSITORY}"
 
-    - name: Render Task Definition
-      id: render-task-def
-      uses: aws-actions/amazon-ecs-render-task-definition@v1
-      with:
-        task-definition: ${{ env.TASK_DEFINITION }}
-        container-name: ${{ env.CONTAINER_NAME }}
-        image: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ca-central-1.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+          echo "Building Docker Image..."
+          docker build -t $IMAGE_REPO_URL:$IMAGE_TAG .
 
-    - name: Deploy to Amazon ECS
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      with:
-        task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-        service: ${{ env.ECS_SERVICE }}
-        cluster: ${{ env.ECS_CLUSTER }}
-        wait-for-service-stability: true
+          echo "Pushing Image..."
+          docker push $IMAGE_REPO_URL:$IMAGE_TAG
+
+          echo "IMAGE_REPO_URL=$IMAGE_REPO_URL:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Render Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: taskdef.json
+          container-name: chukka-container
+          image: ${{ env.IMAGE_REPO_URL }}
+
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
