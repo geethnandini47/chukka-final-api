@@ -1,0 +1,22 @@
+{
+  "family": "chukka-final-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::287526490745:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::287526490745:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "chukka-api",
+      "image": "REPLACED-BY-GITHUB-ACTIONS",
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true
+    }
+  ]
+}
